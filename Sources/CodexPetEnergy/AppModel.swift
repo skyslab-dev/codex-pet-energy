@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-final class AppModel: ObservableObject {
+final class AppModel: NSObject, ObservableObject {
     @Published var primary: UsageWindow?
     @Published var secondary: UsageWindow?
     @Published var connectionState: ConnectionState = .connecting
@@ -16,22 +16,28 @@ final class AppModel: ObservableObject {
     private var refreshedResetDeadlines = Set<TimeInterval>()
     private static let overlayEnabledKey = "usageOverlayEnabled"
 
-    init() {
+    override init() {
         if UserDefaults.standard.object(forKey: Self.overlayEnabledKey) == nil {
             overlayEnabled = true
         } else {
             overlayEnabled = UserDefaults.standard.bool(forKey: Self.overlayEnabledKey)
         }
+        super.init()
 
-        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                self.now = Date()
-                self.refreshAfterReachedResetIfNeeded()
-            }
-        }
+        let timer = Timer(
+            timeInterval: 1,
+            target: self,
+            selector: #selector(clockDidTick),
+            userInfo: nil,
+            repeats: true
+        )
         RunLoop.main.add(timer, forMode: .common)
         clockTimer = timer
+    }
+
+    @objc private func clockDidTick() {
+        now = Date()
+        refreshAfterReachedResetIfNeeded()
     }
 
     func start() {

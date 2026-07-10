@@ -27,7 +27,7 @@ enum OverlayPositioner {
 }
 
 @MainActor
-final class PetTracker {
+final class PetTracker: NSObject {
     struct LivePetWindow {
         let id: CGWindowID
         let rect: CGRect
@@ -52,11 +52,19 @@ final class PetTracker {
 
     func start() {
         tick()
-        let timer = Timer(timeInterval: 0.04, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
-        }
+        let timer = Timer(
+            timeInterval: 0.04,
+            target: self,
+            selector: #selector(timerDidFire),
+            userInfo: nil,
+            repeats: true
+        )
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+    }
+
+    @objc private func timerDidFire() {
+        tick()
     }
 
     func stop() {
