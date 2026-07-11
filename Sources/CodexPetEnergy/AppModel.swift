@@ -15,12 +15,18 @@ final class AppModel: NSObject, ObservableObject {
     private var clockTimer: Timer?
     private var refreshedResetDeadlines = Set<TimeInterval>()
     private static let overlayEnabledKey = "usageOverlayEnabled"
+    private static let automaticActivationMigrationKey = "didEnableAutomaticActivationV1"
 
     override init() {
-        if UserDefaults.standard.object(forKey: Self.overlayEnabledKey) == nil {
+        let defaults = UserDefaults.standard
+        if !defaults.bool(forKey: Self.automaticActivationMigrationKey) {
+            overlayEnabled = true
+            defaults.set(true, forKey: Self.overlayEnabledKey)
+            defaults.set(true, forKey: Self.automaticActivationMigrationKey)
+        } else if defaults.object(forKey: Self.overlayEnabledKey) == nil {
             overlayEnabled = true
         } else {
-            overlayEnabled = UserDefaults.standard.bool(forKey: Self.overlayEnabledKey)
+            overlayEnabled = defaults.bool(forKey: Self.overlayEnabledKey)
         }
         super.init()
 

@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model = AppModel()
         overlay = OverlayPanelController(model: model)
         menuBar = MenuBarController(model: model, overlay: overlay)
+        AutomaticStartup.registerIfNeeded()
         model.start()
         overlay.start()
     }
