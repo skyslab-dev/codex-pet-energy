@@ -5,7 +5,7 @@ import Foundation
 final class CodexUsageClient: @unchecked Sendable {
     enum Event {
         case connected
-        case windows(UsageWindow?, UsageWindow?)
+        case windows(UsageWindow?, UsageWindow?, replacingMissing: Bool)
         case unavailable(String)
     }
 
@@ -149,7 +149,7 @@ final class CodexUsageClient: @unchecked Sendable {
            pendingRateLimitRequestIDs.remove(id) != nil {
             if let result = message["result"] as? [String: Any] {
                 let windows = UsagePayloadParser.windows(from: result)
-                onEvent(.windows(windows.primary, windows.secondary))
+                onEvent(.windows(windows.primary, windows.secondary, replacingMissing: true))
             } else if message["error"] != nil {
                 onEvent(.unavailable("Codex usage is temporarily unavailable"))
             }
@@ -160,7 +160,7 @@ final class CodexUsageClient: @unchecked Sendable {
            let params = message["params"] as? [String: Any],
            let snapshot = params["rateLimits"] as? [String: Any] {
             let windows = UsagePayloadParser.windows(fromSnapshot: snapshot)
-            onEvent(.windows(windows.primary, windows.secondary))
+            onEvent(.windows(windows.primary, windows.secondary, replacingMissing: false))
         }
     }
 

@@ -29,13 +29,41 @@ final class UsageModelsTests: XCTestCase {
     func testParserReadsPrimaryAndSecondary() {
         let result: [String: Any] = [
             "rateLimits": [
-                "primary": ["usedPercent": 33, "resetsAt": 2_000],
-                "secondary": ["usedPercent": 5, "resetsAt": 9_000],
+                "primary": ["usedPercent": 33, "windowDurationMins": 300, "resetsAt": 2_000],
+                "secondary": ["usedPercent": 5, "windowDurationMins": 10_080, "resetsAt": 9_000],
             ],
         ]
         let windows = UsagePayloadParser.windows(from: result)
         XCTAssertEqual(windows.primary?.remainingPercent, 67)
+        XCTAssertEqual(windows.primary?.label, "5-Hour Limit")
         XCTAssertEqual(windows.secondary?.remainingPercent, 95)
+        XCTAssertEqual(windows.secondary?.label, "Weekly Limit")
+    }
+
+    func testParserRecognizesWeeklyOnlyPrimaryWindow() {
+        let result: [String: Any] = [
+            "rateLimits": [
+                "primary": ["usedPercent": 9, "windowDurationMins": 10_080, "resetsAt": 2_000],
+                "secondary": NSNull(),
+            ],
+        ]
+        let windows = UsagePayloadParser.windows(from: result)
+        XCTAssertEqual(windows.primary?.label, "Weekly Limit")
+        XCTAssertEqual(windows.primary?.remainingPercent, 91)
+        XCTAssertEqual(windows.primary?.windowDurationMinutes, 10_080)
+        XCTAssertNil(windows.secondary)
+    }
+
+    func testParserOrdersKnownWindowsByDuration() {
+        let result: [String: Any] = [
+            "rateLimits": [
+                "primary": ["usedPercent": 10, "windowDurationMins": 10_080],
+                "secondary": ["usedPercent": 20, "windowDurationMins": 300],
+            ],
+        ]
+        let windows = UsagePayloadParser.windows(from: result)
+        XCTAssertEqual(windows.primary?.label, "5-Hour Limit")
+        XCTAssertEqual(windows.secondary?.label, "Weekly Limit")
     }
 
     func testParserPrefersCodexBucketFromMultiLimitPayload() {

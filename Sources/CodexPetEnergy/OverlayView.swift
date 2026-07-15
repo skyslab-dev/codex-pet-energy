@@ -10,8 +10,26 @@ private enum GlassPalette {
     static let hairline = appleIvory.opacity(0.11)
 }
 
+enum OverlayLayout {
+    static let width: CGFloat = 207
+    static let twoWindowHeight: CGFloat = 178
+    static let oneWindowHeight: CGFloat = 124
+
+    static func panelSize(windowCount: Int) -> CGSize {
+        CGSize(width: width, height: windowCount > 1 ? twoWindowHeight : oneWindowHeight)
+    }
+}
+
 struct OverlayView: View {
     @ObservedObject var model: AppModel
+
+    private var windows: [UsageWindow] {
+        [model.primary, model.secondary].compactMap { $0 }
+    }
+
+    private var panelSize: CGSize {
+        OverlayLayout.panelSize(windowCount: windows.count)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,20 +37,22 @@ struct OverlayView: View {
 
             Spacer().frame(height: 9)
 
-            UsageRow(window: model.primary, now: model.now)
+            UsageRow(window: windows.first, now: model.now)
 
-            Spacer().frame(height: 8)
+            if windows.count > 1 {
+                Spacer().frame(height: 8)
 
-            Divider()
-                .overlay(GlassPalette.hairline)
+                Divider()
+                    .overlay(GlassPalette.hairline)
 
-            Spacer().frame(height: 8)
+                Spacer().frame(height: 8)
 
-            UsageRow(window: model.secondary, now: model.now)
+                UsageRow(window: windows[1], now: model.now)
+            }
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 10)
-        .frame(width: 195, height: 166)
+        .frame(width: panelSize.width - 12, height: panelSize.height - 12)
         .background {
             ZStack {
                 MacGlassView(material: .hudWindow, blendingMode: .behindWindow)
@@ -160,11 +180,7 @@ private struct UsageRow: View {
     }
 
     private var displayLabel: String {
-        switch window?.label {
-        case "5-HOUR LIMIT": return "5-hour limit"
-        case "WEEKLY LIMIT": return "Weekly limit"
-        default: return "Usage limit"
-        }
+        window?.label ?? "Usage Limit"
     }
 
 }
