@@ -11,6 +11,7 @@ All notable changes to Codex Pet Energy are documented here.
 - Added menu-bar refresh, enable/disable, Launch at Login, and quit controls.
 - Added automatic Launch at Login registration on first run.
 - Adapted limit labels and panel height to the window durations currently returned by Codex.
+- Restored hover detection and drag following for the current split-window Codex Pet layout.
 - Added robust Codex app-server lifecycle management and reconnect behavior.
 - Reduced idle CPU usage through cached window IDs and adaptive polling.
 - Added strict concurrency validation and expanded the test suite to 12 cases.

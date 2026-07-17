@@ -14,6 +14,7 @@ Move the pointer over your Pet to reveal a compact Apple-style glass panel with 
 - Native macOS glass material and SF system typography
 - Hover-to-show and automatic dismissal
 - Smooth Pet drag following across displays and Spaces
+- Compatibility with both legacy and current Codex Pet window layouts
 - Automatic left/right placement near screen edges
 - Click-through overlay that never blocks the Pet or desktop
 - Menu-bar controls for refresh, enable/disable, Launch at Login, and quit
