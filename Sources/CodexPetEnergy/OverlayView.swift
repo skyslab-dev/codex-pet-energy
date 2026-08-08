@@ -64,38 +64,53 @@ struct OverlayView: View {
 
     @ViewBuilder
     private var glassSurface: some View {
+#if compiler(>=6.2)
         if #available(macOS 26.0, *) {
-            content
-                .glassEffect(
-                    .regular,
-                    in: RoundedRectangle(cornerRadius: 26, style: .continuous)
-                )
+            nativeGlassSurface
         } else {
-            content
-                .background {
-                    ZStack {
-                        MacGlassView(material: .popover, blendingMode: .behindWindow)
-                        GlassPalette.fallbackWash
+            fallbackGlassSurface
+        }
+#else
+        fallbackGlassSurface
+#endif
+    }
+
+#if compiler(>=6.2)
+    @available(macOS 26.0, *)
+    private var nativeGlassSurface: some View {
+        content
+            .glassEffect(
+                .regular,
+                in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+            )
+    }
+#endif
+
+    private var fallbackGlassSurface: some View {
+        content
+            .background {
+                ZStack {
+                    MacGlassView(material: .popover, blendingMode: .behindWindow)
+                    GlassPalette.fallbackWash
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.09), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .strokeBorder(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.09), .clear],
+                            colors: [Color.white.opacity(0.24), Color.primary.opacity(0.07)],
                             startPoint: .top,
                             endPoint: .bottom
-                        )
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [Color.white.opacity(0.24), Color.primary.opacity(0.07)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 0.6
-                        )
-                }
-        }
+                        ),
+                        lineWidth: 0.6
+                    )
+            }
     }
 
     private var header: some View {
