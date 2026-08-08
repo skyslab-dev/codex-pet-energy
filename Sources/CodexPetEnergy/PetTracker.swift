@@ -35,8 +35,13 @@ final class PetTracker: NSObject {
 
     struct PersistedPetState {
         let isOpen: Bool
-        let windowRect: CGRect
-        let mascotOffset: CGRect
+        let windowRect: CGRect?
+        let mascotOffset: CGRect?
+        let directMascotRect: CGRect?
+
+        var referenceRect: CGRect {
+            windowRect ?? directMascotRect ?? .zero
+        }
     }
 
     private let stateURL = URL(fileURLWithPath: NSHomeDirectory())
@@ -99,24 +104,31 @@ final class PetTracker: NSObject {
         }
         lastWindowPollAt = now
 
-        guard let liveWindow = resolveLivePetWindow(near: state.windowRect) else {
+        let liveWindow = resolveLivePetWindow(for: state)
+        let mascot: CGRect
+        if let directMascot = state.directMascotRect {
+            let quartzMascot = liveWindow.map {
+                Self.centeredMascotRect(in: $0.rect, size: directMascot.size)
+            } ?? directMascot
+            mascot = Self.cocoaRect(fromQuartzRect: quartzMascot)
+        } else if let liveWindow,
+                  let offset = state.mascotOffset {
+            let cocoaWindow = Self.cocoaRect(fromQuartzRect: liveWindow.rect)
+            mascot = CGRect(
+                x: cocoaWindow.minX + offset.minX,
+                y: cocoaWindow.maxY - offset.maxY,
+                width: offset.width,
+                height: offset.height
+            )
+        } else {
             lastPlacement = nil
             wasPointerNearPet = false
             onPlacement?(nil)
             return
         }
-
-        let cocoaWindow = Self.cocoaRect(fromQuartzRect: liveWindow.rect)
-        let offset = state.mascotOffset
-        let mascot = CGRect(
-            x: cocoaWindow.minX + offset.minX,
-            y: cocoaWindow.maxY - offset.maxY,
-            width: offset.width,
-            height: offset.height
-        )
         let screen = NSScreen.screens.first(where: { $0.frame.intersects(mascot) })?.visibleFrame
             ?? NSScreen.main?.visibleFrame
-            ?? cocoaWindow
+            ?? mascot
         let placement = PetPlacement(mascotRect: mascot, screenFrame: screen)
         let placementChanged = placement != lastPlacement
         lastPlacement = placement
@@ -131,17 +143,30 @@ final class PetTracker: NSObject {
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let open = root["electron-avatar-overlay-open"] as? Bool,
               let bounds = root["electron-avatar-overlay-bounds"] as? [String: Any],
-              let mascot = bounds["mascot"] as? [String: Any],
-              let x = number(bounds["x"]), let y = number(bounds["y"]),
-              let width = number(bounds["width"]), let height = number(bounds["height"]),
-              let left = number(mascot["left"]), let top = number(mascot["top"]),
-              let mascotWidth = number(mascot["width"]), let mascotHeight = number(mascot["height"]) else {
+              let x = number(bounds["x"]), let y = number(bounds["y"]) else {
             return nil
         }
+
+        if let mascot = bounds["mascot"] as? [String: Any],
+           let width = number(bounds["width"]), let height = number(bounds["height"]),
+           let left = number(mascot["left"]), let top = number(mascot["top"]),
+           let mascotWidth = number(mascot["width"]), let mascotHeight = number(mascot["height"]) {
+            return PersistedPetState(
+                isOpen: open,
+                windowRect: CGRect(x: x, y: y, width: width, height: height),
+                mascotOffset: CGRect(x: left, y: top, width: mascotWidth, height: mascotHeight),
+                directMascotRect: nil
+            )
+        }
+
+        // Newer Codex builds persist the mascot's Quartz-space origin
+        // directly and expose its live movement through a centered layer-2
+        // interaction window. Pet sprites retain the standard 80×87 body.
         return PersistedPetState(
             isOpen: open,
-            windowRect: CGRect(x: x, y: y, width: width, height: height),
-            mascotOffset: CGRect(x: left, y: top, width: mascotWidth, height: mascotHeight)
+            windowRect: nil,
+            mascotOffset: nil,
+            directMascotRect: CGRect(x: x, y: y, width: 80, height: 87)
         )
     }
 
@@ -149,47 +174,66 @@ final class PetTracker: NSObject {
         (value as? NSNumber).map { CGFloat($0.doubleValue) }
     }
 
-    private func resolveLivePetWindow(near persisted: CGRect) -> LivePetWindow? {
+    private func resolveLivePetWindow(for state: PersistedPetState) -> LivePetWindow? {
         if let liveWindowID,
-           let window = Self.windowInfo(for: liveWindowID, near: persisted) {
+           let window = Self.windowInfo(for: liveWindowID, state: state) {
             return window
         }
         liveWindowID = nil
-        guard let discovered = Self.findLivePetWindow(near: persisted) else { return nil }
+        guard let discovered = Self.findLivePetWindow(for: state) else { return nil }
         liveWindowID = discovered.id
         return discovered
     }
 
-    private nonisolated static func windowInfo(for id: CGWindowID, near persisted: CGRect) -> LivePetWindow? {
+    private nonisolated static func windowInfo(for id: CGWindowID, state: PersistedPetState) -> LivePetWindow? {
         guard let windows = CGWindowListCopyWindowInfo([.optionIncludingWindow, .excludeDesktopElements], id)
                 as? [[String: Any]] else { return nil }
-        return windows.compactMap { livePetWindow(from: $0, near: persisted) }.first
+        return windows.compactMap { livePetWindow(from: $0, state: state) }.first
     }
 
-    nonisolated static func findLivePetWindow(near persisted: CGRect) -> LivePetWindow? {
+    nonisolated static func findLivePetWindow(for state: PersistedPetState) -> LivePetWindow? {
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
                 as? [[String: Any]] else { return nil }
-        let candidates = windows.compactMap { livePetWindow(from: $0, near: persisted) }
+        let candidates = windows.compactMap { livePetWindow(from: $0, state: state) }
+        let reference = state.referenceRect
         return candidates.min { lhs, rhs in
-            hypot(lhs.rect.minX - persisted.minX, lhs.rect.minY - persisted.minY)
-                < hypot(rhs.rect.minX - persisted.minX, rhs.rect.minY - persisted.minY)
+            hypot(lhs.rect.midX - reference.midX, lhs.rect.midY - reference.midY)
+                < hypot(rhs.rect.midX - reference.midX, rhs.rect.midY - reference.midY)
         }
     }
 
     private nonisolated static func livePetWindow(
         from window: [String: Any],
-        near persisted: CGRect
+        state: PersistedPetState
     ) -> LivePetWindow? {
         guard let ownerName = window[kCGWindowOwnerName as String] as? String,
               ownerName == "ChatGPT" || ownerName == "Codex",
-              (window[kCGWindowLayer as String] as? NSNumber)?.intValue == 3,
+              let layer = (window[kCGWindowLayer as String] as? NSNumber)?.intValue,
               let id = (window[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
               let bounds = window[kCGWindowBounds as String] as? [String: Any],
               let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
+
+        if state.directMascotRect != nil {
+            let isInteractionLayer = layer == 2
+                && rect.width >= 100 && rect.width <= 260
+                && rect.height >= 100 && rect.height <= 260
+            return isInteractionLayer ? LivePetWindow(id: id, rect: rect) : nil
+        }
+
+        guard let persisted = state.windowRect, layer == 3 else { return nil }
         let sizeMatches = abs(rect.width - persisted.width) < 12 && abs(rect.height - persisted.height) < 12
         let knownSize = (abs(rect.width - 356) < 12 && abs(rect.height - 320) < 12)
             || (abs(rect.width - 384) < 12 && abs(rect.height - 400) < 12)
         return sizeMatches || knownSize ? LivePetWindow(id: id, rect: rect) : nil
+    }
+
+    nonisolated static func centeredMascotRect(in interactionWindow: CGRect, size: CGSize) -> CGRect {
+        CGRect(
+            x: interactionWindow.midX - size.width / 2,
+            y: interactionWindow.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
     }
 
     static func cocoaRect(fromQuartzRect rect: CGRect) -> CGRect {

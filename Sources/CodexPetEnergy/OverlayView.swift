@@ -2,81 +2,163 @@ import AppKit
 import SwiftUI
 
 private enum GlassPalette {
-    // Sampled from the Apple reference: RGB(255, 254, 201).
-    // All hierarchy levels share this hue and vary only in opacity.
-    static let appleIvory = Color(red: 1.0, green: 254.0 / 255.0, blue: 201.0 / 255.0)
-    static let primary = appleIvory
-    static let secondary = appleIvory.opacity(0.76)
-    static let tertiary = appleIvory.opacity(0.42)
+    static let accent = Color(nsColor: .controlAccentColor)
+    static let connected = Color(nsColor: .systemGreen)
+    static let syncing = Color(nsColor: .systemOrange)
+    static let unavailable = Color(nsColor: .systemRed)
+    static let track = Color.primary.opacity(0.10)
+    static let hairline = Color.primary.opacity(0.09)
+    static let fallbackWash = Color.white.opacity(0.055)
+}
+
+enum OverlayLayout {
+    static let width: CGFloat = 224
+    static let twoWindowHeight: CGFloat = 174
+    static let oneWindowHeight: CGFloat = 116
+
+    static func panelSize(windowCount: Int) -> CGSize {
+        CGSize(width: width, height: windowCount > 1 ? twoWindowHeight : oneWindowHeight)
+    }
 }
 
 struct OverlayView: View {
     @ObservedObject var model: AppModel
 
+    private var windows: [UsageWindow] {
+        [model.primary, model.secondary].compactMap { $0 }
+    }
+
+    private var panelSize: CGSize {
+        OverlayLayout.panelSize(windowCount: windows.count)
+    }
+
     var body: some View {
-        VStack(spacing: 5) {
+        glassSurface
+            .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+            .padding(6)
+    }
+
+    private var content: some View {
+        VStack(spacing: 0) {
             header
 
-            UsageRow(window: model.primary, now: model.now)
+            Spacer().frame(height: 10)
 
-            Divider()
-                .overlay(GlassPalette.primary.opacity(0.12))
+            UsageRow(window: windows.first, now: model.now)
 
-            UsageRow(window: model.secondary, now: model.now)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .frame(width: 195, height: 166)
-        .background {
-            ZStack {
-                MacGlassView(material: .underWindowBackground, blendingMode: .behindWindow)
-                Color.black.opacity(0.17)
+            if windows.count > 1 {
+                Spacer().frame(height: 7)
+
+                Divider()
+                    .overlay(GlassPalette.hairline)
+
+                Spacer().frame(height: 7)
+
+                UsageRow(window: windows[1], now: model.now)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .strokeBorder(GlassPalette.primary.opacity(0.08), lineWidth: 0.5)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .frame(width: panelSize.width - 12, height: panelSize.height - 12)
+    }
+
+    @ViewBuilder
+    private var glassSurface: some View {
+#if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            nativeGlassSurface
+        } else {
+            fallbackGlassSurface
         }
-        .shadow(color: .black.opacity(0.18), radius: 13, y: 5)
-        .padding(6)
+#else
+        fallbackGlassSurface
+#endif
+    }
+
+#if compiler(>=6.2)
+    @available(macOS 26.0, *)
+    private var nativeGlassSurface: some View {
+        content
+            .glassEffect(
+                .regular,
+                in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+            )
+    }
+#endif
+
+    private var fallbackGlassSurface: some View {
+        content
+            .background {
+                ZStack {
+                    MacGlassView(material: .popover, blendingMode: .behindWindow)
+                    GlassPalette.fallbackWash
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.09), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.24), Color.primary.opacity(0.07)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 0.6
+                    )
+            }
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "bolt.horizontal.fill")
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundStyle(GlassPalette.primary)
-                .frame(width: 14)
+        HStack(spacing: 8) {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(GlassPalette.accent)
+                .frame(width: 23, height: 23)
+                .background(GlassPalette.accent.opacity(0.13), in: Circle())
 
-            Text("Codex usage")
+            Text("Codex Energy")
                 .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(GlassPalette.primary)
+                .foregroundStyle(.primary)
 
             Spacer(minLength: 4)
 
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 Circle()
                     .fill(statusColor)
-                    .frame(width: 5, height: 5)
+                    .frame(width: 4.5, height: 4.5)
                 Text(statusLabel)
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .tracking(0.35)
             }
             .foregroundStyle(statusColor)
+            .padding(.horizontal, 7)
+            .frame(height: 22)
+            .background(Color.primary.opacity(0.065), in: Capsule())
         }
-        .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
     }
 
     private var statusColor: Color {
-        if case .connected = model.connectionState {
-            return GlassPalette.secondary
+        switch model.connectionState {
+        case .connected:
+            return GlassPalette.connected
+        case .connecting:
+            return GlassPalette.syncing
+        case .unavailable:
+            return GlassPalette.unavailable
         }
-        return GlassPalette.tertiary
     }
 
     private var statusLabel: String {
-        if case .connected = model.connectionState { return "Live" }
-        return "Syncing"
+        switch model.connectionState {
+        case .connected: return "LIVE"
+        case .connecting: return "SYNC"
+        case .unavailable: return "OFFLINE"
+        }
     }
 }
 
@@ -85,74 +167,70 @@ private struct UsageRow: View {
     let now: Date
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(displayLabel)
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(GlassPalette.secondary)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.primary)
 
                 Spacer()
 
                 if let window {
-                    HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline, spacing: 2.5) {
                         Text("\(window.remainingPercent)%")
-                            .font(.system(size: 15, weight: .bold))
+                            .font(.system(size: 17, weight: .semibold))
                             .monospacedDigit()
                         Text("left")
-                            .font(.system(size: 9.5, weight: .semibold))
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
                     }
-                    .foregroundStyle(color(for: window.remainingPercent))
+                    .foregroundStyle(.primary)
                 } else {
                     Text("—")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(GlassPalette.tertiary)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.tertiary)
                 }
             }
 
+            Spacer().frame(height: 5)
+
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(GlassPalette.primary.opacity(0.15))
-                    if let window {
+                    Capsule().fill(GlassPalette.track)
+                    if let window, window.remainingPercent > 0 {
                         Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [color(for: window.remainingPercent).opacity(0.78), color(for: window.remainingPercent)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(width: max(6, proxy.size.width * CGFloat(window.remainingPercent) / 100))
-                            .shadow(color: GlassPalette.primary.opacity(0.12), radius: 3)
+                            .fill(energyColor(for: window.remainingPercent))
+                            .frame(width: max(5, proxy.size.width * CGFloat(window.remainingPercent) / 100))
                     }
                 }
             }
             .frame(height: 5)
+            .animation(.smooth(duration: 0.45), value: window?.remainingPercent)
 
-            HStack(spacing: 5) {
+            Spacer().frame(height: 5)
+
+            HStack(spacing: 4.5) {
                 Image(systemName: "clock")
                     .font(.system(size: 8.5, weight: .medium))
                 Text(window?.resetDescription(relativeTo: now) ?? "Usage unavailable")
-                    .font(.system(size: 10.5, weight: .medium))
+                    .font(.system(size: 9.5, weight: .medium))
                     .monospacedDigit()
                 Spacer()
             }
-            .foregroundStyle(GlassPalette.tertiary)
+            .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 2)
-        .padding(.vertical, 1)
-        .shadow(color: .black.opacity(0.10), radius: 1, y: 0.5)
     }
 
     private var displayLabel: String {
-        switch window?.label {
-        case "5-HOUR LIMIT": return "5-hour limit"
-        case "WEEKLY LIMIT": return "Weekly limit"
-        default: return "Usage limit"
-        }
+        window?.label ?? "Usage Limit"
     }
 
-    private func color(for _: Int) -> Color {
-        return GlassPalette.primary
+    private func energyColor(for remainingPercent: Int) -> Color {
+        switch remainingPercent {
+        case ...15: return Color(nsColor: .systemRed)
+        case ...30: return Color(nsColor: .systemOrange)
+        default: return GlassPalette.accent
+        }
     }
 }
 
@@ -165,7 +243,7 @@ private struct MacGlassView: NSViewRepresentable {
         view.material = material
         view.blendingMode = blendingMode
         view.state = .active
-        view.isEmphasized = true
+        view.isEmphasized = false
         return view
     }
 
