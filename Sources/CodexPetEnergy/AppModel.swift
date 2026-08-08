@@ -15,12 +15,18 @@ final class AppModel: NSObject, ObservableObject {
     private var clockTimer: Timer?
     private var refreshedResetDeadlines = Set<TimeInterval>()
     private static let overlayEnabledKey = "usageOverlayEnabled"
+    private static let automaticActivationMigrationKey = "didEnableAutomaticActivationV1"
 
     override init() {
-        if UserDefaults.standard.object(forKey: Self.overlayEnabledKey) == nil {
+        let defaults = UserDefaults.standard
+        if !defaults.bool(forKey: Self.automaticActivationMigrationKey) {
+            overlayEnabled = true
+            defaults.set(true, forKey: Self.overlayEnabledKey)
+            defaults.set(true, forKey: Self.automaticActivationMigrationKey)
+        } else if defaults.object(forKey: Self.overlayEnabledKey) == nil {
             overlayEnabled = true
         } else {
-            overlayEnabled = UserDefaults.standard.bool(forKey: Self.overlayEnabledKey)
+            overlayEnabled = defaults.bool(forKey: Self.overlayEnabledKey)
         }
         super.init()
 
@@ -78,11 +84,18 @@ final class AppModel: NSObject, ObservableObject {
         switch event {
         case .connected:
             connectionState = .connected
-        case .windows(let primary, let secondary):
-            // Rolling rate-limit notifications are sparse. Preserve the most
-            // recent value for any window omitted by an update.
-            if let primary { self.primary = primary }
-            if let secondary { self.secondary = secondary }
+        case .windows(let primary, let secondary, let replacingMissing):
+            if replacingMissing {
+                // Full reads are authoritative, including explicit removal of
+                // a window when an account moves to a different limit model.
+                self.primary = primary
+                self.secondary = secondary
+            } else {
+                // Rolling notifications can be sparse. Preserve the most
+                // recent value for any window omitted by an update.
+                if let primary { self.primary = primary }
+                if let secondary { self.secondary = secondary }
+            }
             connectionState = .connected
         case .unavailable(let reason):
             connectionState = .unavailable(reason)

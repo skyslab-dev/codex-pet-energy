@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 final class OverlayPanel: NSPanel {
@@ -11,13 +12,15 @@ final class OverlayPanelController {
     private let panel: OverlayPanel
     private let model: AppModel
     private let tracker = PetTracker()
-    private let panelSize = CGSize(width: 207, height: 178)
+    private var usageWindowSubscription: AnyCancellable?
     private var isPresented = false
     private var isDraggingPet = false
     private var wasLeftButtonDown = false
 
     init(model: AppModel) {
         self.model = model
+        let initialWindowCount = [model.primary, model.secondary].compactMap { $0 }.count
+        let panelSize = OverlayLayout.panelSize(windowCount: initialWindowCount)
         panel = OverlayPanel(
             contentRect: CGRect(origin: .zero, size: panelSize),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -36,6 +39,16 @@ final class OverlayPanelController {
         hostingView.autoresizingMask = [.width, .height]
         panel.contentView = hostingView
         panel.setContentSize(panelSize)
+
+        usageWindowSubscription = model.$primary
+            .combineLatest(model.$secondary)
+            .map { primary, secondary in
+                [primary, secondary].compactMap { $0 }.count
+            }
+            .removeDuplicates()
+            .sink { [weak self] windowCount in
+                self?.updatePanelSize(for: windowCount)
+            }
 
         tracker.onPlacement = { [weak self] placement in
             self?.apply(placement)
@@ -106,6 +119,12 @@ final class OverlayPanelController {
         if panel.isVisible {
             panel.orderOut(nil)
         }
+    }
+
+    private func updatePanelSize(for windowCount: Int) {
+        let size = OverlayLayout.panelSize(windowCount: windowCount)
+        guard panel.frame.size != size else { return }
+        panel.setContentSize(size)
     }
 }
 
