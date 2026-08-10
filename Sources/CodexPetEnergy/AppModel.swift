@@ -4,6 +4,7 @@ import Foundation
 final class AppModel: NSObject, ObservableObject {
     @Published var primary: UsageWindow?
     @Published var secondary: UsageWindow?
+    @Published var tokenUsageProfile: TokenUsageProfile?
     @Published var connectionState: ConnectionState = .connecting
     @Published var now = Date()
     @Published var overlayEnabled: Bool {
@@ -16,6 +17,20 @@ final class AppModel: NSObject, ObservableObject {
     private var refreshedResetDeadlines = Set<TimeInterval>()
     private static let overlayEnabledKey = "usageOverlayEnabled"
     private static let automaticActivationMigrationKey = "didEnableAutomaticActivationV1"
+
+    var weeklyTokenActivity: WeeklyTokenActivity? {
+        guard let tokenUsageProfile,
+              let weeklyWindow = [primary, secondary]
+                .compactMap({ $0 })
+                .first(where: { $0.windowDurationMinutes == 10_080 }) else {
+            return nil
+        }
+        return WeeklyTokenActivityBuilder.activity(
+            profile: tokenUsageProfile,
+            window: weeklyWindow,
+            now: now
+        )
+    }
 
     override init() {
         let defaults = UserDefaults.standard
@@ -97,6 +112,8 @@ final class AppModel: NSObject, ObservableObject {
                 if let secondary { self.secondary = secondary }
             }
             connectionState = .connected
+        case .tokenUsage(let profile):
+            tokenUsageProfile = profile
         case .unavailable(let reason):
             connectionState = .unavailable(reason)
         }
