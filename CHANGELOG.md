@@ -2,7 +2,7 @@
 
 All notable changes to Codex Pet Energy are documented here.
 
-## Unreleased
+## 0.4.0 — 2026-08-10
 
 - Added a seven-day token activity summary beneath the weekly usage limit.
 - Aligned the displayed date range and daily token buckets to each account's current weekly reset cycle.
