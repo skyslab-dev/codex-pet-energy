@@ -6,6 +6,7 @@ final class CodexUsageClient: @unchecked Sendable {
     enum Event {
         case connected
         case windows(UsageWindow?, UsageWindow?, replacingMissing: Bool)
+        case tokenUsage(TokenUsageProfile?)
         case unavailable(String)
     }
 
@@ -20,6 +21,7 @@ final class CodexUsageClient: @unchecked Sendable {
     private var pollingTimer: DispatchSourceTimer?
     private var nextRequestID = 2
     private var pendingRateLimitRequestIDs = Set<Int>()
+    private var pendingTokenUsageRequestIDs = Set<Int>()
     private var stopped = false
 
     init(onEvent: @escaping (Event) -> Void) {
@@ -46,6 +48,7 @@ final class CodexUsageClient: @unchecked Sendable {
             guard let self else { return }
             if self.process?.isRunning == true {
                 self.requestRateLimits()
+                self.requestTokenUsage()
             } else {
                 self.launch()
             }
@@ -138,6 +141,7 @@ final class CodexUsageClient: @unchecked Sendable {
                 send(["method": "initialized"])
                 onEvent(.connected)
                 requestRateLimits()
+                requestTokenUsage()
                 startPolling()
             } else if message["error"] != nil {
                 failActiveProcess(reason: "Codex usage service rejected initialization")
@@ -152,6 +156,18 @@ final class CodexUsageClient: @unchecked Sendable {
                 onEvent(.windows(windows.primary, windows.secondary, replacingMissing: true))
             } else if message["error"] != nil {
                 onEvent(.unavailable("Codex usage is temporarily unavailable"))
+            }
+            return
+        }
+
+        if let id = (message["id"] as? NSNumber)?.intValue,
+           pendingTokenUsageRequestIDs.remove(id) != nil {
+            if let result = message["result"] as? [String: Any] {
+                onEvent(.tokenUsage(TokenUsagePayloadParser.profile(from: result)))
+            } else if message["error"] != nil {
+                // Token activity is supplemental. Keep live rate-limit data
+                // visible when an older app-server does not expose it.
+                onEvent(.tokenUsage(nil))
             }
             return
         }
@@ -174,6 +190,16 @@ final class CodexUsageClient: @unchecked Sendable {
         }
     }
 
+    private func requestTokenUsage() {
+        guard process?.isRunning == true else { return }
+        let id = nextRequestID
+        nextRequestID = nextRequestID == Int.max ? 2 : nextRequestID + 1
+        pendingTokenUsageRequestIDs.insert(id)
+        if !send(["id": id, "method": "account/usage/read", "params": NSNull()]) {
+            pendingTokenUsageRequestIDs.remove(id)
+        }
+    }
+
     @discardableResult
     private func send(_ object: [String: Any]) -> Bool {
         guard let input,
@@ -193,7 +219,10 @@ final class CodexUsageClient: @unchecked Sendable {
         pollingTimer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 60, repeating: 60, leeway: .seconds(2))
-        timer.setEventHandler { [weak self] in self?.requestRateLimits() }
+        timer.setEventHandler { [weak self] in
+            self?.requestRateLimits()
+            self?.requestTokenUsage()
+        }
         timer.resume()
         pollingTimer = timer
     }
@@ -223,6 +252,7 @@ final class CodexUsageClient: @unchecked Sendable {
         process = nil
         outputBuffer.removeAll(keepingCapacity: false)
         pendingRateLimitRequestIDs.removeAll(keepingCapacity: false)
+        pendingTokenUsageRequestIDs.removeAll(keepingCapacity: false)
         pollingTimer?.cancel()
         pollingTimer = nil
         if terminate, activeProcess?.isRunning == true {

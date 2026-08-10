@@ -32,6 +32,141 @@ struct UsageWindow: Equatable {
     }
 }
 
+struct DailyTokenUsageBucket: Equatable {
+    let startDate: String
+    let tokens: Int64
+}
+
+struct TokenUsageProfile: Equatable {
+    let dailyUsageBuckets: [DailyTokenUsageBucket]
+}
+
+struct WeeklyTokenActivity: Equatable {
+    let startDate: Date
+    let endDate: Date
+    let dailyTokens: [Int64]
+    let currentDayIndex: Int?
+
+    var totalTokens: Int64 {
+        dailyTokens.reduce(0, +)
+    }
+
+    var totalDescription: String {
+        TokenCountFormatter.compact(totalTokens)
+    }
+
+    func dateRangeDescription(calendar: Calendar = .current) -> String {
+        let start = calendar.dateComponents([.month, .day], from: startDate)
+        let end = calendar.dateComponents([.month, .day], from: endDate)
+        guard let startMonth = start.month,
+              let startDay = start.day,
+              let endMonth = end.month,
+              let endDay = end.day else {
+            return "—"
+        }
+
+        let startName = Self.shortMonthName(startMonth)
+        if startMonth == endMonth {
+            return "\(startName) \(startDay)–\(endDay)"
+        }
+        return "\(startName) \(startDay)–\(Self.shortMonthName(endMonth)) \(endDay)"
+    }
+
+    private static func shortMonthName(_ month: Int) -> String {
+        let names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        guard names.indices.contains(month - 1) else { return "" }
+        return names[month - 1]
+    }
+}
+
+enum TokenUsagePayloadParser {
+    static func profile(from result: [String: Any]) -> TokenUsageProfile? {
+        guard let values = result["dailyUsageBuckets"] as? [[String: Any]] else {
+            return nil
+        }
+        let buckets = values.compactMap { value -> DailyTokenUsageBucket? in
+            guard let startDate = value["startDate"] as? String,
+                  let tokens = value["tokens"] as? NSNumber else {
+                return nil
+            }
+            return DailyTokenUsageBucket(startDate: startDate, tokens: max(0, tokens.int64Value))
+        }
+        return TokenUsageProfile(dailyUsageBuckets: buckets)
+    }
+}
+
+enum WeeklyTokenActivityBuilder {
+    static func activity(
+        profile: TokenUsageProfile,
+        window: UsageWindow,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> WeeklyTokenActivity? {
+        guard let resetsAt = window.resetsAt,
+              let durationMinutes = window.windowDurationMinutes,
+              durationMinutes >= 1_440,
+              durationMinutes.isMultiple(of: 1_440) else {
+            return nil
+        }
+
+        let dayCount = durationMinutes / 1_440
+        guard dayCount == 7 else { return nil }
+
+        let endDate = calendar.startOfDay(for: resetsAt)
+        guard let startDate = calendar.date(byAdding: .day, value: -dayCount, to: endDate) else {
+            return nil
+        }
+
+        let tokensByDate = Dictionary(
+            profile.dailyUsageBuckets.map { ($0.startDate, $0.tokens) },
+            uniquingKeysWith: +
+        )
+        let dailyTokens = (0..<dayCount).map { offset -> Int64 in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: startDate) else { return 0 }
+            return tokensByDate[dateKey(for: date, calendar: calendar), default: 0]
+        }
+
+        let today = calendar.startOfDay(for: now)
+        let currentOffset = calendar.dateComponents([.day], from: startDate, to: today).day
+        let currentDayIndex = currentOffset.flatMap { dailyTokens.indices.contains($0) ? $0 : nil }
+
+        return WeeklyTokenActivity(
+            startDate: startDate,
+            endDate: endDate,
+            dailyTokens: dailyTokens,
+            currentDayIndex: currentDayIndex
+        )
+    }
+
+    private static func dateKey(for date: Date, calendar: Calendar) -> String {
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let year = components.year, let month = components.month, let day = components.day else {
+            return ""
+        }
+        return String(format: "%04d-%02d-%02d", year, month, day)
+    }
+}
+
+enum TokenCountFormatter {
+    static func compact(_ tokens: Int64) -> String {
+        switch tokens {
+        case 1_000_000_000...:
+            return format(Double(tokens) / 1_000_000_000, suffix: "B")
+        case 1_000_000...:
+            return format(Double(tokens) / 1_000_000, suffix: "M")
+        case 1_000...:
+            return format(Double(tokens) / 1_000, suffix: "K")
+        default:
+            return "\(tokens)"
+        }
+    }
+
+    private static func format(_ value: Double, suffix: String) -> String {
+        let formatted = String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value)
+        return formatted.replacingOccurrences(of: ".0", with: "") + suffix
+    }
+}
+
 enum ConnectionState: Equatable {
     case connecting
     case connected

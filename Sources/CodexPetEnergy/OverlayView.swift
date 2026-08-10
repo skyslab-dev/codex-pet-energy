@@ -15,9 +15,14 @@ enum OverlayLayout {
     static let width: CGFloat = 224
     static let twoWindowHeight: CGFloat = 174
     static let oneWindowHeight: CGFloat = 116
+    static let weeklyActivityHeight: CGFloat = 58
 
-    static func panelSize(windowCount: Int) -> CGSize {
-        CGSize(width: width, height: windowCount > 1 ? twoWindowHeight : oneWindowHeight)
+    static func panelSize(windowCount: Int, showsWeeklyActivity: Bool = false) -> CGSize {
+        let usageHeight = windowCount > 1 ? twoWindowHeight : oneWindowHeight
+        return CGSize(
+            width: width,
+            height: usageHeight + (showsWeeklyActivity ? weeklyActivityHeight : 0)
+        )
     }
 }
 
@@ -29,7 +34,10 @@ struct OverlayView: View {
     }
 
     private var panelSize: CGSize {
-        OverlayLayout.panelSize(windowCount: windows.count)
+        OverlayLayout.panelSize(
+            windowCount: windows.count,
+            showsWeeklyActivity: model.weeklyTokenActivity != nil
+        )
     }
 
     var body: some View {
@@ -55,6 +63,17 @@ struct OverlayView: View {
                 Spacer().frame(height: 7)
 
                 UsageRow(window: windows[1], now: model.now)
+            }
+
+            if let activity = model.weeklyTokenActivity {
+                Spacer().frame(height: 7)
+
+                Divider()
+                    .overlay(GlassPalette.hairline)
+
+                Spacer().frame(height: 7)
+
+                WeeklyTokenActivityRow(activity: activity)
             }
         }
         .padding(.horizontal, 14)
@@ -124,6 +143,9 @@ struct OverlayView: View {
             Text("Codex Energy")
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(.primary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
 
             Spacer(minLength: 4)
 
@@ -159,6 +181,84 @@ struct OverlayView: View {
         case .connecting: return "SYNC"
         case .unavailable: return "OFFLINE"
         }
+    }
+}
+
+private struct WeeklyTokenActivityRow: View {
+    let activity: WeeklyTokenActivity
+
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("This Week")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                HStack(alignment: .firstTextBaseline, spacing: 2.5) {
+                    Text(activity.totalDescription)
+                        .font(.system(size: 17, weight: .semibold))
+                        .monospacedDigit()
+                    Text("tokens")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .foregroundStyle(.primary)
+            }
+
+            HStack(alignment: .bottom, spacing: 8) {
+                Text(activity.dateRangeDescription())
+                    .font(.system(size: 9.5, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 8)
+
+                WeeklyTokenBars(activity: activity)
+                    .frame(width: 76, height: 20)
+            }
+        }
+    }
+}
+
+private struct WeeklyTokenBars: View {
+    let activity: WeeklyTokenActivity
+
+    private var maximumTokens: Int64 {
+        max(1, activity.dailyTokens.max() ?? 0)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            HStack(alignment: .bottom, spacing: 4) {
+                ForEach(Array(activity.dailyTokens.enumerated()), id: \.offset) { index, tokens in
+                    Capsule()
+                        .fill(color(for: index, tokens: tokens))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: barHeight(tokens: tokens, availableHeight: proxy.size.height))
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Daily token activity for this week")
+        .accessibilityValue(activity.totalDescription + " tokens")
+    }
+
+    private func barHeight(tokens: Int64, availableHeight: CGFloat) -> CGFloat {
+        guard tokens > 0 else { return 3 }
+        let fraction = CGFloat(Double(tokens) / Double(maximumTokens))
+        return max(5, availableHeight * fraction)
+    }
+
+    private func color(for index: Int, tokens: Int64) -> Color {
+        if activity.currentDayIndex == index {
+            return GlassPalette.accent
+        }
+        if tokens > 0 {
+            return GlassPalette.accent.opacity(0.68)
+        }
+        return GlassPalette.track
     }
 }
 

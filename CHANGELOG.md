@@ -2,6 +2,14 @@
 
 All notable changes to Codex Pet Energy are documented here.
 
+## Unreleased
+
+- Added a seven-day token activity summary beneath the weekly usage limit.
+- Aligned the displayed date range and daily token buckets to each account's current weekly reset cycle.
+- Added compact token totals, highlighted the current day, and preserved the original single-limit overlay when token history is unavailable.
+- Added local `account/usage/read` polling without storing or uploading token history.
+- Expanded token parsing, reset-cycle aggregation, date formatting, and compact-number coverage, bringing the test suite to 20 cases.
+
 ## 0.3.0 — 2026-08-07
 
 - Redesigned the energy overlay with native macOS 26 Liquid Glass and an adaptive macOS 14+ fallback.

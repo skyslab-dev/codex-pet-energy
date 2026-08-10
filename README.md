@@ -10,6 +10,7 @@ Move the pointer over your Pet to reveal a compact Apple-style glass panel with 
 
 - Live 5-hour and weekly Codex usage percentages
 - Automatic adaptation to the limit windows currently returned by Codex
+- Seven-day token activity aligned to the current weekly reset cycle
 - Per-second reset countdowns
 - Native macOS 26 Liquid Glass with an adaptive macOS 14+ material fallback
 - Hover-to-show and automatic dismissal
@@ -56,9 +57,9 @@ dist/Codex Pet Energy.app
 
 ## How it works
 
-The app launches the local Codex `app-server` process and reads its `account/rateLimits/read` protocol response. It tracks the floating Pet window through macOS window metadata and uses the Pet geometry stored by Codex to place the companion panel.
+The app launches the local Codex `app-server` process and reads its `account/rateLimits/read` and `account/usage/read` protocol responses. It tracks the floating Pet window through macOS window metadata and uses the Pet geometry stored by Codex to place the companion panel.
 
-Limit labels are derived from each server-provided window duration. When an account exposes only a weekly window, the overlay collapses to a single compact row instead of displaying a stale 5-hour limit.
+Limit labels are derived from each server-provided window duration. When an account exposes only a weekly window, the overlay collapses to a single compact row instead of displaying a stale 5-hour limit. Daily token buckets are read from the same local app-server and grouped between the weekly window's calculated start date and reset date.
 
 The menu-bar companion stays dormant when Codex is not running. On first run, it registers for Launch at Login so it is already available whenever Codex and Codex Pet start. Launch at Login can be disabled from the menu-bar controls at any time.
 

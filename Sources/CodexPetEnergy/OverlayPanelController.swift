@@ -2,6 +2,11 @@ import AppKit
 import Combine
 import SwiftUI
 
+private struct OverlayContentState: Equatable {
+    let windowCount: Int
+    let showsWeeklyActivity: Bool
+}
+
 final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
@@ -20,7 +25,10 @@ final class OverlayPanelController {
     init(model: AppModel) {
         self.model = model
         let initialWindowCount = [model.primary, model.secondary].compactMap { $0 }.count
-        let panelSize = OverlayLayout.panelSize(windowCount: initialWindowCount)
+        let panelSize = OverlayLayout.panelSize(
+            windowCount: initialWindowCount,
+            showsWeeklyActivity: model.weeklyTokenActivity != nil
+        )
         panel = OverlayPanel(
             contentRect: CGRect(origin: .zero, size: panelSize),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -41,13 +49,24 @@ final class OverlayPanelController {
         panel.setContentSize(panelSize)
 
         usageWindowSubscription = model.$primary
-            .combineLatest(model.$secondary)
-            .map { primary, secondary in
-                [primary, secondary].compactMap { $0 }.count
+            .combineLatest(model.$secondary, model.$tokenUsageProfile)
+            .map { primary, secondary, profile in
+                let windows = [primary, secondary].compactMap { $0 }
+                let hasWeeklyWindow = windows.contains {
+                    $0.windowDurationMinutes == 10_080 && $0.resetsAt != nil
+                }
+                let showsWeeklyActivity = profile != nil && hasWeeklyWindow
+                return OverlayContentState(
+                    windowCount: windows.count,
+                    showsWeeklyActivity: showsWeeklyActivity
+                )
             }
             .removeDuplicates()
-            .sink { [weak self] windowCount in
-                self?.updatePanelSize(for: windowCount)
+            .sink { [weak self] state in
+                self?.updatePanelSize(
+                    for: state.windowCount,
+                    showsWeeklyActivity: state.showsWeeklyActivity
+                )
             }
 
         tracker.onPlacement = { [weak self] placement in
@@ -121,8 +140,11 @@ final class OverlayPanelController {
         }
     }
 
-    private func updatePanelSize(for windowCount: Int) {
-        let size = OverlayLayout.panelSize(windowCount: windowCount)
+    private func updatePanelSize(for windowCount: Int, showsWeeklyActivity: Bool) {
+        let size = OverlayLayout.panelSize(
+            windowCount: windowCount,
+            showsWeeklyActivity: showsWeeklyActivity
+        )
         guard panel.frame.size != size else { return }
         panel.setContentSize(size)
     }
